@@ -1,4 +1,4 @@
-"""FastAPI app: inventory, dyeing batches, winding/yield, B2B dispatch, loss reports.
+"""FastAPI app: inventory, dyeing batches, winding/yield, B2B dispatch, loss reports, and Telegram bot webhook.
 
 Run:  uvicorn main:app --host 0.0.0.0 --port 8000
 """
@@ -15,6 +15,8 @@ from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Query, R
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+import google.generativeai as genai
+import telegram
 
 import services
 from database import engine, get_db
@@ -26,6 +28,13 @@ from schemas import (
 
 log = logging.getLogger("yarn_erp")
 API_KEY = os.getenv("API_KEY")
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+
+if GEMINI_API_KEY:
+    genai.configure(api_key=GEMINI_API_KEY)
+
+telegram_bot = telegram.Bot(token=TELEGRAM_BOT_TOKEN) if TELEGRAM_BOT_TOKEN else None
 
 
 @asynccontextmanager
@@ -35,7 +44,7 @@ async def lifespan(_: FastAPI):
     yield
 
 
-app = FastAPI(title="Yarn Dyeing & Winding ERP", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="Yarn Dyeing & Winding ERP & Telegram Bot", version="1.0.0", lifespan=lifespan)
 
 
 def require_api_key(x_api_key: Optional[str] = Header(default=None)) -> None:
@@ -57,6 +66,41 @@ async def integrity_error_handler(_: Request, exc: IntegrityError):
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+# ------------------------------------------------------------------ Telegram Webhook
+@app.post("/webhook")
+async def telegram_webhook(request: Request):
+    if not telegram_bot:
+        return {"status": "bot token not configured"}
+    
+    try:
+        data = await request.json()
+        update = telegram.Update.de_json(data, telegram_bot)
+        
+        if update and update.message and update.message.text:
+            chat_id = update.message.chat_id
+            user_text = update.message.text
+            
+            # Generate intelligent response using Gemini AI
+            response_text = "Hello! I am your ERP assistant."
+            if GEMINI_API_KEY:
+                try:
+                    # Using gemini-2.5-flash or standard generative model
+                    model = genai.GenerativeModel("gemini-1.5-flash")
+                    ai_response = model.generate_content(user_text)
+                    if ai_response and ai_response.text:
+                        response_text = ai_response.text
+                except Exception as e:
+                    log.error("Gemini AI error: %s", e)
+                    response_text = f"Received your message, but encountered an AI error: {e}"
+            
+            await telegram_bot.send_message(chat_id=chat_id, text=response_text)
+            
+        return {"status": "ok"}
+    except Exception as e:
+        log.error("Webhook error: %s", e)
+        return {"status": "error", "detail": str(e)}
 
 
 api = APIRouter(prefix="/api", dependencies=[Depends(require_api_key)])
