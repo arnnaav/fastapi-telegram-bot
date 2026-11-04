@@ -16,7 +16,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 import google.generativeai as genai
-import telegram
+import requests
 
 import services
 from database import engine, get_db
@@ -33,8 +33,6 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
-
-telegram_bot = telegram.Bot(token=TELEGRAM_BOT_TOKEN) if TELEGRAM_BOT_TOKEN else None
 
 
 @asynccontextmanager
@@ -71,35 +69,41 @@ def health():
 # ------------------------------------------------------------------ Telegram Webhook
 @app.post("/webhook")
 async def telegram_webhook(request: Request):
-    if not telegram_bot:
+    if not TELEGRAM_BOT_TOKEN:
         return {"status": "bot token not configured"}
     
     try:
         data = await request.json()
-        update = telegram.Update.de_json(data, telegram_bot)
+        log.info("Received webhook data: %s", data)
         
-        if update and update.message and update.message.text:
-            chat_id = update.message.chat_id
-            user_text = update.message.text
+        message = data.get("message") or data.get("edited_message")
+        if not message or "text" not in message:
+            return {"status": "no text message found"}
             
-            # Generate intelligent response using Gemini AI
-            response_text = "Hello! I am your ERP assistant."
-            if GEMINI_API_KEY:
-                try:
-                    # Using gemini-2.5-flash or standard generative model
-                    model = genai.GenerativeModel("gemini-1.5-flash")
-                    ai_response = model.generate_content(user_text)
-                    if ai_response and ai_response.text:
-                        response_text = ai_response.text
-                except Exception as e:
-                    log.error("Gemini AI error: %s", e)
-                    response_text = f"Received your message, but encountered an AI error: {e}"
-            
-            await telegram_bot.send_message(chat_id=chat_id, text=response_text)
-            
+        chat_id = message["chat"]["id"]
+        user_text = message.get("text", "")
+        
+        response_text = "Hello! I am your ERP & AI assistant."
+        
+        if user_text and GEMINI_API_KEY:
+            try:
+                model = genai.GenerativeModel("gemini-1.5-flash")
+                ai_response = model.generate_content(user_text)
+                if ai_response and ai_response.text:
+                    response_text = ai_response.text
+            except Exception as ai_err:
+                log.error("Gemini AI generation error: %s", ai_err)
+                response_text = f"AI Error: {ai_err}"
+        
+        url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+        payload = {"chat_id": chat_id, "text": response_text}
+        r = requests.post(url, json=payload)
+        log.info("Telegram send response: %s", r.text)
+        
         return {"status": "ok"}
+        
     except Exception as e:
-        log.error("Webhook error: %s", e)
+        log.error("Webhook processing error: %s", e)
         return {"status": "error", "detail": str(e)}
 
 
@@ -194,80 +198,3 @@ def daily_loss(
 
 
 app.include_router(api)
-@app.post("/webhook")
-async def telegram_webhook(request: Request):
-    if not telegram_bot:
-        return {"status": "bot token not configured"}
-    
-    try:
-        data = await request.json()
-        log.info("Received webhook data: %s", data)
-        
-        # Extract message safely from Telegram update dict
-        message = data.get("message") or data.get("edited_message")
-        if not message:
-            return {"status": "no message found"}
-            
-        chat_id = message["chat"]["id"]
-        user_text = message.get("text", "")
-        
-        response_text = "Hello! I received your message."
-        if user_text and GEMINI_API_KEY:
-            try:
-                model = genai.GenerativeModel("gemini-1.5-flash")
-                ai_response = model.generate_content(user_text)
-                if ai_response and ai_response.text:
-                    response_text = ai_response.text
-            except Exception as ai_err:
-                log.error("Gemini AI generation error: %s", ai_err)
-                response_text = "Sorry, I encountered an error generating an AI response."
-        
-        # Send reply back via Telegram API
-        await telegram_bot.send_message(chat_id=chat_id, text=response_text)
-        return {"status": "ok"}
-        
-    except Exception as e:
-        log.error("Webhook processing error: %s", e)
-        return {"status": "error", "detail": str(e)}
-import requests
-
-@app.post("/webhook")
-async def telegram_webhook(request: Request):
-    if not TELEGRAM_BOT_TOKEN:
-        return {"status": "bot token not configured"}
-    
-    try:
-        data = await request.json()
-        log.info("Received webhook data: %s", data)
-        
-        # Extract message safely from incoming JSON
-        message = data.get("message") or data.get("edited_message")
-        if not message:
-            return {"status": "no message found"}
-            
-        chat_id = message["chat"]["id"]
-        user_text = message.get("text", "")
-        
-        response_text = "Hello! I am your ERP & AI assistant."
-        
-        if user_text and GEMINI_API_KEY:
-            try:
-                model = genai.GenerativeModel("gemini-1.5-flash")
-                ai_response = model.generate_content(user_text)
-                if ai_response and ai_response.text:
-                    response_text = ai_response.text
-            except Exception as ai_err:
-                log.error("Gemini AI generation error: %s", ai_err)
-                response_text = f"AI Error: {ai_err}"
-        
-        # Send response directly via Telegram HTTP API
-        url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-        payload = {"chat_id": chat_id, "text": response_text}
-        r = requests.post(url, json=payload)
-        log.info("Telegram send response: %s", r.text)
-        
-        return {"status": "ok"}
-        
-    except Exception as e:
-        log.error("Webhook processing error: %s", e)
-        return {"status": "error", "detail": str(e)}
