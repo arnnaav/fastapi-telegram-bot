@@ -51,7 +51,7 @@ BASE_PROMPT = (
 RULES = """
 Operating rules:
 - Reply in the worker's language/script (Hinglish in -> Hinglish out). Exactly 2 short lines, with emojis. No markdown.
-- Yarn counts look like 2/30 or 2/50. Weights are kg. Convert spoken numbers ("dedh sau" = 150, "dhai sau" = 250).
+- Yarn counts look like 2/30 or 2/50 etc. Weights are in kg. Convert spoken numbers ("dedh sau" = 150, "dhai sau" = 250).
 - Shift: subah/morning/day = MORNING, raat/night = NIGHT. If the worker does not say it, use the shift implied by the
   current time below and mention it in line 2.
 - Winding: if the worker says more winding is still pending for that batch ("baaki hai", "partial"), pass
