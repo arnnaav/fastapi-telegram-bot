@@ -194,3 +194,38 @@ def daily_loss(
 
 
 app.include_router(api)
+@app.post("/webhook")
+async def telegram_webhook(request: Request):
+    if not telegram_bot:
+        return {"status": "bot token not configured"}
+    
+    try:
+        data = await request.json()
+        log.info("Received webhook data: %s", data)
+        
+        # Extract message safely from Telegram update dict
+        message = data.get("message") or data.get("edited_message")
+        if not message:
+            return {"status": "no message found"}
+            
+        chat_id = message["chat"]["id"]
+        user_text = message.get("text", "")
+        
+        response_text = "Hello! I received your message."
+        if user_text and GEMINI_API_KEY:
+            try:
+                model = genai.GenerativeModel("gemini-1.5-flash")
+                ai_response = model.generate_content(user_text)
+                if ai_response and ai_response.text:
+                    response_text = ai_response.text
+            except Exception as ai_err:
+                log.error("Gemini AI generation error: %s", ai_err)
+                response_text = "Sorry, I encountered an error generating an AI response."
+        
+        # Send reply back via Telegram API
+        await telegram_bot.send_message(chat_id=chat_id, text=response_text)
+        return {"status": "ok"}
+        
+    except Exception as e:
+        log.error("Webhook processing error: %s", e)
+        return {"status": "error", "detail": str(e)}
