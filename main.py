@@ -87,7 +87,7 @@ async def telegram_webhook(request: Request):
         
         if user_text and GEMINI_API_KEY:
             try:
-                model = genai.GenerativeModel("gemini-1.5-flash")
+                model = genai.GenerativeModel("gemini-pro")
                 ai_response = model.generate_content(user_text)
                 if ai_response and ai_response.text:
                     response_text = ai_response.text
