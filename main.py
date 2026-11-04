@@ -38,7 +38,7 @@ if GEMINI_API_KEY:
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     if os.getenv("AUTO_CREATE_TABLES", "1") == "1":
-        Base.metadata.create_all(engine)  # use Alembic migrations in real production
+        Base.metadata.create_all(engine)
     yield
 
 
